@@ -1,0 +1,2074 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Suriye Tapu ve Kadastro Bilgi Sistemi (TAKBIS)</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        emerald: { 50: '#ecfdf5', 600: '#059669', 700: '#047857', 800: '#065f46', 900: '#064e3b' },
+                        slate: { 850: '#1e293b' },
+                        gold: { 500: '#D4AF37', 600: '#C5A028' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- JSZip & toGeoJSON (KMZ Parsing) -->
+    <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
+
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Inter:wght@300;400;500;600;700&family=Amiri:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body class="bg-slate-50 text-slate-800 h-screen overflow-hidden selection:bg-emerald-200"
+    :dir="lang === 'ar' ? 'rtl' : 'ltr'">
+
+    <div id="app" class="h-full relative overflow-hidden flex flex-col md:flex-row">
+
+        <!-- ==================== LOGIN SCREEN ==================== -->
+        <div v-if="!isLoggedIn" class="fixed inset-0 z-[10000] flex items-center justify-center login-pattern p-4"
+            :dir="lang === 'ar' ? 'rtl' : 'ltr'">
+
+            <!-- Dil Butonları -->
+            <div class="absolute top-6 right-6 flex gap-2 z-20">
+                <button @click="setLang('ar')"
+                    :class="lang === 'ar' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'"
+                    class="px-3 py-1 rounded text-xs font-bold transition">AR</button>
+                <button @click="setLang('tr')"
+                    :class="lang === 'tr' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'"
+                    class="px-3 py-1 rounded text-xs font-bold transition">TR</button>
+                <button @click="setLang('en')"
+                    :class="lang === 'en' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'"
+                    class="px-3 py-1 rounded text-xs font-bold transition">EN</button>
+            </div>
+
+            <!-- Login Card -->
+            <div
+                class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl w-full max-w-md border-t-8 border-emerald-600 relative overflow-hidden">
+                <div class="text-center mb-8 relative z-10">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Emblem_of_Syria_%282025%E2%80%93present%29.svg/2560px-Emblem_of_Syria_%282025%E2%80%93present%29.svg.png"
+                        class="h-20 mx-auto mb-4 drop-shadow-md object-contain">
+                    <h1 class="text-xl md:text-2xl font-bold text-slate-800">{{ t.loginSystemName }}</h1>
+                    <p class="text-slate-500 text-xs md:text-sm mt-1">{{ t.loginSubtitle }}</p>
+                </div>
+
+                <form @submit.prevent="handleLogin" class="space-y-5 relative z-10">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">{{ t.lblUsername }}</label>
+                        <input v-model="loginCreds.username" type="text"
+                            class="w-full border-2 border-slate-200 rounded-xl p-2.5 outline-none focus:border-emerald-500 transition text-sm"
+                            placeholder="ID Number">
+                        <div class="mt-2 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                            <button type="button" @click="loginCreds.username = '99001'"
+                                class="shrink-0 px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-500 hover:bg-slate-200 transition">Memur
+                                (99...)</button>
+                            <button type="button" @click="loginCreds.username = '88001'"
+                                class="shrink-0 px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-500 hover:bg-slate-200 transition">Emlakçı
+                                (88...)</button>
+                            <button type="button" @click="loginCreds.username = '12345'"
+                                class="shrink-0 px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-500 hover:bg-slate-200 transition">Vatandaş</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-1">{{ t.lblPassword }}</label>
+                        <input v-model="loginCreds.password" type="password"
+                            class="w-full border-2 border-slate-200 rounded-xl p-2.5 outline-none focus:border-emerald-500 transition text-sm"
+                            placeholder="••••••••">
+                    </div>
+                    <button type="submit" :disabled="loginProcessing"
+                        class="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition shadow-lg flex items-center justify-center gap-2">
+                        <span v-if="loginProcessing"><i class="fa-solid fa-circle-notch fa-spin"></i></span>
+                        <span v-else>{{ t.btnLogin }}</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- ==================== MAIN APP ==================== -->
+        <div v-else class="flex h-full w-full relative overflow-hidden">
+
+            <!-- SIDEBAR -->
+            <aside
+                :class="['fixed md:static inset-y-0 z-[9001] w-64 bg-slate-950 text-slate-300 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out border-e border-slate-800', isMobileMenuOpen ? 'translate-x-0' : (lang === 'ar' ? 'translate-x-full' : '-translate-x-full'), 'md:translate-x-0']">
+
+                <!-- Logo -->
+                <div class="p-6 border-b border-slate-800 flex items-center gap-3 shrink-0">
+                    <div class="w-10 h-10 flex items-center justify-center">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Emblem_of_Syria_%282025%E2%80%93present%29.svg/2560px-Emblem_of_Syria_%282025%E2%80%93present%29.svg.png"
+                            class="max-w-full max-h-full object-contain drop-shadow">
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-white tracking-wide text-base leading-tight">E-TAPU</h1>
+                        <p class="text-[9px] text-emerald-500 uppercase tracking-widest font-bold">DAMASCUS / ALEPPO</p>
+                    </div>
+                    <button @click="isMobileMenuOpen = false" class="md:hidden ms-auto text-slate-400">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Navigation -->
+                <nav class="flex-1 p-3 space-y-1 overflow-y-auto">
+                    <p class="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2 mt-2">{{ t.menuGeneral }}</p>
+                    <button v-for="tab in ['dashboard', 'properties', 'transfer', 'ocr']" :key="tab"
+                        @click="changeTab(tab)"
+                        :class="currentTab === tab ? 'bg-emerald-700 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'"
+                        class="w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all text-sm font-medium">
+                        <i :class="getIcon(tab)" class="w-5 text-center text-lg"></i>
+                        {{ t['nav' + capitalize(tab)] }}
+                    </button>
+
+                    <p class="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2 mt-6">{{ t.menuServices }}</p>
+                    <button v-for="tab in ['valuation', 'expropriation']" :key="tab" @click="changeTab(tab)"
+                        :class="currentTab === tab ? 'bg-emerald-700 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'"
+                        class="w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all text-sm font-medium">
+                        <i :class="getIcon(tab)" class="w-5 text-center text-lg"></i>
+                        {{ t['nav' + capitalize(tab)] }}
+                    </button>
+
+                    <template v-if="loginRole === 'officer'">
+                        <p class="px-3 text-[10px] font-bold text-slate-500 uppercase mb-2 mt-6">{{ t.menuAdmin }}</p>
+                        <button @click="changeTab('logs')"
+                            :class="currentTab === 'logs' ? 'bg-rose-700 text-white shadow-lg' : 'hover:bg-slate-800 hover:text-white'"
+                            class="w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all text-sm font-medium">
+                            <i class="fa-solid fa-clipboard-list w-5 text-center text-lg"></i>
+                            {{ t.navLogs }}
+                        </button>
+                    </template>
+                </nav>
+            </aside>
+
+            <!-- MAIN CONTENT -->
+            <main class="flex-1 flex flex-col bg-slate-50 h-full overflow-hidden w-full">
+
+                <!-- Header -->
+                <header
+                    class="h-16 bg-white shadow-sm border-b px-4 md:px-6 flex justify-between items-center z-10 shrink-0">
+                    <div class="flex items-center gap-3">
+                        <button @click="isMobileMenuOpen = !isMobileMenuOpen"
+                            class="md:hidden text-slate-600 text-xl p-1">
+                            <i class="fa-solid fa-bars"></i>
+                        </button>
+                        <h2 class="text-sm md:text-lg font-bold text-slate-800 flex items-center gap-2 truncate">
+                            <span class="w-1.5 h-5 bg-red-600 rounded-full hidden md:block"></span>
+                            {{ t[currentTab + 'Title'] || t.navMap }}
+                        </h2>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <!-- Dil Butonları -->
+                        <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
+                            <button @click="setLang('ar')"
+                                :class="lang === 'ar' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'"
+                                class="px-3 py-1.5 rounded text-xs font-bold transition">AR</button>
+                            <button @click="setLang('tr')"
+                                :class="lang === 'tr' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'"
+                                class="px-3 py-1.5 rounded text-xs font-bold transition">TR</button>
+                            <button @click="setLang('en')"
+                                :class="lang === 'en' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'"
+                                class="px-3 py-1.5 rounded text-xs font-bold transition">EN</button>
+                        </div>
+
+                        <!-- User Info -->
+                        <div class="hidden lg:flex flex-col items-end px-3 border-r border-slate-200">
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">{{
+                                t.loggedInAs }}</span>
+                            <span class="text-xs font-bold text-slate-800 flex items-center gap-1">
+                                <i
+                                    :class="loginRole === 'officer' ? 'fa-solid fa-user-shield text-rose-600' : (loginRole === 'realtor' ? 'fa-solid fa-user-tie text-blue-600' : 'fa-solid fa-user text-emerald-600')"></i>
+                                {{ t['role' + capitalize(loginRole)] }}
+                            </span>
+                        </div>
+
+                        <button @click="handleLogout"
+                            class="w-10 h-10 rounded-xl bg-slate-50 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition flex items-center justify-center">
+                            <i class="fa-solid fa-power-off"></i>
+                        </button>
+
+                        <!-- KMZ Upload Button (Dashboard only & Officer only) -->
+                        <div class="relative group" v-if="currentTab === 'dashboard' && loginRole === 'officer'">
+                            <input type="file" ref="fileInput" @change="handleFileUpload"
+                                accept=".kmz,.kml,.json,.geojson" class="hidden">
+                            <button @click="$refs.fileInput.click()"
+                                class="bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-slate-900 transition flex items-center gap-2 text-xs md:text-sm font-bold border border-slate-600">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <span>{{ t.btnUploadKMZ }}</span>
+                            </button>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Content Area -->
+                <div class="flex-1 overflow-y-auto p-2 md:p-6 relative">
+
+                    <!-- ==================== DASHBOARD (Map) ==================== -->
+                    <div v-show="currentTab === 'dashboard'" class="h-full flex flex-col gap-4">
+                        <div
+                            class="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden relative min-h-[400px]">
+
+                            <!-- Search Bar -->
+                            <div class="absolute top-3 start-3 z-[400] w-full max-w-[200px] md:max-w-xs flex gap-2">
+                                <div
+                                    class="flex gap-2 bg-white/95 backdrop-blur p-1.5 rounded-lg shadow-xl border border-slate-200 flex-1">
+                                    <input v-model="searchQuery" @keyup.enter="locateProperty"
+                                        :placeholder="t.searchPlaceholder"
+                                        class="flex-1 bg-transparent border-none outline-none px-2 text-xs md:text-sm w-full">
+                                    <button @click="locateProperty"
+                                        class="bg-emerald-600 text-white px-3 py-1 rounded text-xs md:text-sm font-bold">
+                                        <i class="fa-solid fa-search"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Map Container -->
+                            <div id="map"></div>
+
+                            <!-- Map Settings Button -->
+                            <div class="absolute bottom-6 start-6 z-[1000] flex flex-col items-start gap-2">
+                                <button @click="showMapSettings = !showMapSettings"
+                                    class="bg-white/95 backdrop-blur p-3 rounded-xl shadow-xl border border-slate-200 text-slate-700 hover:text-emerald-600 transition flex items-center gap-2 font-bold text-xs ring-1 ring-slate-200">
+                                    <i class="fa-solid fa-palette text-lg"></i>
+                                    <span>{{ t.mapSettings }}</span>
+                                </button>
+
+                                <!-- Settings Panel -->
+                                <transition name="settings">
+                                    <div v-if="showMapSettings"
+                                        class="bg-white/95 backdrop-blur p-5 rounded-2xl shadow-2xl border border-slate-200 w-64 animate-fade-in ring-1 ring-slate-200">
+                                        <div
+                                            class="flex justify-between items-center mb-4 pb-2 border-b border-slate-100">
+                                            <h4 class="font-bold text-xs text-slate-800 uppercase tracking-wider">{{
+                                                t.mapStyle }}</h4>
+                                            <button @click="showMapSettings = false"
+                                                class="text-slate-400 hover:text-red-500">
+                                                <i class="fa-solid fa-xmark"></i>
+                                            </button>
+                                        </div>
+
+                                        <div class="space-y-4">
+                                            <!-- Çizgi Rengi -->
+                                            <div>
+                                                <label
+                                                    class="block text-[10px] font-bold text-slate-500 uppercase mb-2">{{
+                                                    t.lineColor }}</label>
+                                                <div class="flex flex-wrap gap-2">
+                                                    <button
+                                                        v-for="c in ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#000000']"
+                                                        :key="c" @click="mapStyle.color = c"
+                                                        :style="{ backgroundColor: c }"
+                                                        :class="['w-6 h-6 rounded-full border-2 transition', mapStyle.color === c ? 'border-emerald-500 scale-125' : 'border-transparent']"></button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Çizgi Kalınlığı -->
+                                            <div>
+                                                <div class="flex justify-between mb-1">
+                                                    <label class="text-[10px] font-bold text-slate-500 uppercase">{{
+                                                        t.lineWeight }}</label>
+                                                    <span class="text-[10px] font-mono text-slate-400">{{
+                                                        mapStyle.weight }}px</span>
+                                                </div>
+                                                <input type="range" v-model.number="mapStyle.weight" min="1" max="10"
+                                                    step="1"
+                                                    class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                                            </div>
+
+                                            <!-- Şeffaflık -->
+                                            <div>
+                                                <div class="flex justify-between mb-1">
+                                                    <label class="text-[10px] font-bold text-slate-500 uppercase">{{
+                                                        t.fillOpacity }}</label>
+                                                    <span class="text-[10px] font-mono text-slate-400">{{
+                                                        Math.round(mapStyle.fillOpacity * 100) }}%</span>
+                                                </div>
+                                                <input type="range" v-model.number="mapStyle.fillOpacity" min="0"
+                                                    max="1" step="0.1"
+                                                    class="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </transition>
+                            </div>
+
+                            <!-- KMZ Loading Overlay -->
+                            <div v-if="kmzLoading"
+                                class="absolute inset-0 z-[2000] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+                                <div class="kmz-loader p-6 rounded-2xl flex flex-col items-center gap-4 shadow-2xl">
+                                    <div
+                                        class="w-12 h-12 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin">
+                                    </div>
+                                    <div class="text-center">
+                                        <p class="text-white font-bold text-sm tracking-widest uppercase mb-1">{{
+                                            t.loadingLayer }}</p>
+                                        <p class="text-emerald-400 text-xs font-medium">{{ loadingMsg || t.processingKMZ
+                                            }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== OCR MODULE ==================== -->
+                    <div v-if="currentTab === 'ocr'" class="animate-fade-in max-w-7xl mx-auto h-full flex flex-col">
+                        <div
+                            class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 flex-1 flex flex-col md:flex-row h-full">
+
+                            <!-- Left: Image Viewer -->
+                            <div
+                                class="w-full md:w-1/2 bg-slate-800 p-4 flex flex-col relative border-e border-slate-700">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 class="text-white font-bold flex items-center gap-2">
+                                        <i class="fa-solid fa-file-contract text-emerald-400"></i>
+                                        {{ t.ocrOriginalDoc }}
+                                    </h3>
+                                    <div class="flex gap-2">
+                                        <input type="file" ref="ocrInput" @change="handleOcrUpload"
+                                            accept="image/*,.pdf" class="hidden">
+                                        <button @click="openOcrPicker($event)"
+                                            class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition shadow-lg border border-blue-500 flex items-center gap-2">
+                                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                                            {{ t.ocrUpload }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Viewer Toolbar -->
+                                <div
+                                    class="flex items-center gap-2 mb-2 bg-slate-900/50 p-2 rounded-lg border border-slate-700 overflow-x-auto">
+                                    <button @click="viewerScale *= 1.2"
+                                        class="p-2 text-white hover:bg-slate-700 rounded transition" :title="t.zoomIn">
+                                        <i class="fa-solid fa-plus"></i>
+                                    </button>
+                                    <button @click="viewerScale *= 0.8"
+                                        class="p-2 text-white hover:bg-slate-700 rounded transition" :title="t.zoomOut">
+                                        <i class="fa-solid fa-minus"></i>
+                                    </button>
+                                    <button @click="resetViewer"
+                                        class="p-2 text-white hover:bg-slate-700 rounded transition" :title="t.reset">
+                                        <i class="fa-solid fa-compress"></i>
+                                    </button>
+                                    <div class="w-px h-4 bg-slate-700 mx-1"></div>
+                                    <button @click="viewerMode = 'pan'"
+                                        :class="['p-2 rounded transition', viewerMode === 'pan' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-700']"
+                                        :title="t.panMode">
+                                        <i class="fa-solid fa-hand"></i>
+                                    </button>
+                                    <button @click="viewerMode = 'select'"
+                                        :class="['p-2 rounded transition', viewerMode === 'select' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-700']"
+                                        :title="t.selectZoomMode">
+                                        <i class="fa-solid fa-vector-square"></i>
+                                    </button>
+                                    <div
+                                        class="ms-auto flex items-center gap-2 text-[10px] text-slate-500 font-mono px-2">
+                                        {{ Math.round(viewerScale * 100) }}%
+                                    </div>
+                                </div>
+
+                                <!-- Image Container -->
+                                <div ref="viewerContainer" @wheel="handleViewerWheel" @mousedown="handleViewerMouseDown"
+                                    @mousemove="handleViewerMouseMove" @mouseup="handleViewerMouseUp"
+                                    @mouseleave="handleViewerMouseUp"
+                                    class="flex-1 bg-slate-900/50 rounded-xl border-2 border-dashed border-slate-600 flex items-center justify-center relative overflow-hidden group select-none"
+                                    :style="{ cursor: viewerMode === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'crosshair' }">
+
+                                    <div v-if="!ocrImage" class="text-slate-500 flex flex-col items-center">
+                                        <i class="fa-solid fa-file-invoice text-5xl mb-4 opacity-50"></i>
+                                        <p class="text-sm font-medium">{{ t.ocrPlaceholder }}</p>
+                                    </div>
+
+                                    <div v-else class="relative transition-transform duration-75 ease-out"
+                                        :style="{ transform: `translate(${viewerPanX}px, ${viewerPanY}px) scale(${viewerScale})` }">
+                                        <img :src="ocrImage"
+                                            class="max-w-full max-h-[80vh] shadow-2xl pointer-events-none">
+                                    </div>
+
+                                    <!-- Selection Box -->
+                                    <div v-if="isSelecting"
+                                        class="absolute border-2 border-emerald-400 bg-emerald-400/20 z-20 pointer-events-none"
+                                        :style="{ top: selectionRect.top + 'px', left: selectionRect.left + 'px', width: selectionRect.width + 'px', height: selectionRect.height + 'px' }">
+                                    </div>
+
+                                    <!-- Scanning Effect -->
+                                    <div v-if="ocrScanning"
+                                        class="absolute top-0 left-0 w-full h-2 bg-emerald-400/80 shadow-[0_0_20px_rgba(52,211,153,0.8)] animate-scan z-10">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Right: Smart Editor Form -->
+                            <div class="w-full md:w-1/2 p-0 flex flex-col bg-slate-50 overflow-hidden">
+                                <div class="p-6 border-b bg-white">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h3 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                                <i class="fa-solid fa-wand-magic-sparkles text-purple-600"></i>
+                                                {{ t.ocrAnalysisTitle }}
+                                            </h3>
+                                            <p class="text-xs text-slate-500 mt-1">{{ t.ocrAnalysisSubtitle }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex-1 overflow-y-auto p-6 space-y-6">
+
+                                    <!-- Loading State -->
+                                    <div v-if="ocrScanning"
+                                        class="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
+                                        <div class="relative">
+                                            <div
+                                                class="w-16 h-16 border-4 border-slate-200 border-t-emerald-500 rounded-full animate-spin">
+                                            </div>
+                                            <i
+                                                class="fa-solid fa-brain absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-emerald-500 text-xl"></i>
+                                        </div>
+                                        <div class="text-center">
+                                            <p class="text-sm font-bold text-slate-600">{{ t.aiAnalyzing }}</p>
+                                            <p class="text-xs text-slate-400 mt-1">{{ t.ocrEngine }}</p>
+                                            <p class="text-xs text-slate-400">{{ t.dataProcessing }}</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Extracted Data Form -->
+                                    <div v-else-if="ocrForm && ocrForm.owner_name" class="space-y-6 animate-fade-in">
+
+                                        <!-- Mülkiyet Bilgileri -->
+                                        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
+                                            <div
+                                                class="absolute -top-3 right-4 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200">
+                                                {{ t.propertyInfo }}</div>
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div class="col-span-2">
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.ownerFullName }}</label>
+                                                    <input v-model="ocrForm.owner_name"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-800 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition">
+                                                </div>
+                                                <div>
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.share }}</label>
+                                                    <input v-model="ocrForm.share_text"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                </div>
+                                                <div>
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.transactionDate }}</label>
+                                                    <input v-model="ocrForm.signature_date"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.dailyRegisterNo }} / {{ t.transactionType }}</label>
+                                                    <div class="grid grid-cols-2 gap-2">
+                                                        <input v-model="ocrForm.daily_register_no"
+                                                            :placeholder="t.dailyRegisterNo"
+                                                            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                        <input v-model="ocrForm.transaction_type"
+                                                            :placeholder="t.transactionType"
+                                                            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Taşınmaz Kimliği -->
+                                        <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative">
+                                            <div
+                                                class="absolute -top-3 right-4 bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-200">
+                                                {{ t.propertyInfo }}</div>
+                                            <div class="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.province }}</label>
+                                                    <input v-model="ocrForm.province"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                </div>
+                                                <div>
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.district }}</label>
+                                                    <input v-model="ocrForm.district"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.directorate }}</label>
+                                                    <input v-model="ocrForm.directorate"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                </div>
+                                                <div class="col-span-2 relative">
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.blockParcelNo }}</label>
+                                                    <div class="flex gap-2">
+                                                        <input v-model="ocrForm.property_number"
+                                                            class="flex-1 p-2.5 bg-yellow-50 border border-yellow-300 rounded-lg text-sm font-black text-slate-900 tracking-wider">
+                                                        <button @click="openOcrMapModal"
+                                                            class="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 transition shadow flex items-center justify-center gap-2 text-xs font-bold"
+                                                            :title="t.match">
+                                                            <i class="fa-solid fa-map-location-dot"></i> {{ t.match }}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.quality }} / {{ t.colType }} / {{ t.areaSize }}</label>
+                                                    <div class="grid grid-cols-2 gap-2">
+                                                        <input v-model="ocrForm.property_type" :placeholder="t.quality"
+                                                            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                        <input v-model="ocrForm.area_text" :placeholder="t.areaSize"
+                                                            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700">
+                                                    </div>
+                                                </div>
+                                                <div class="col-span-2">
+                                                    <label
+                                                        class="block text-[10px] font-bold text-slate-400 uppercase mb-1">{{
+                                                        t.description }}</label>
+                                                    <textarea v-model="ocrForm.description" rows="2"
+                                                        class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 resize-none"></textarea>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="pt-2">
+                                            <button @click="saveAndGenerateDeed"
+                                                class="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition flex items-center justify-center gap-3 shadow-lg transform active:scale-95">
+                                                <i class="fa-solid fa-file-signature"></i> {{ t.confirmAndCreate }}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Empty State -->
+                                    <div v-else
+                                        class="flex flex-col items-center justify-center h-full text-slate-400 opacity-50">
+                                        <i class="fa-solid fa-arrow-right-to-bracket text-4xl mb-4 text-slate-300"></i>
+                                        <p>{{ t.uploadDocument }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== PROPERTIES LIST ==================== -->
+                    <div v-if="currentTab === 'properties'"
+                        class="animate-fade-in space-y-6 max-w-7xl mx-auto h-full flex flex-col">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
+                            <div
+                                class="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4 transition-all hover:shadow-md">
+                                <div
+                                    class="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 shadow-inner">
+                                    <i class="fa-solid fa-hotel"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">{{
+                                        t.totalProperties }}</p>
+                                    <p class="text-xl font-black text-slate-800 tracking-tight">{{ properties.length }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div
+                                class="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center gap-4 transition-all hover:shadow-md">
+                                <div
+                                    class="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 shadow-inner">
+                                    <i class="fa-solid fa-coins"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-black text-slate-400 uppercase leading-none mb-1">{{
+                                        t.totalValue }}</p>
+                                    <p class="text-xl font-black text-slate-800 tracking-tight">{{ totalValue }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ==================== ADVANCED FILTER BAR ==================== -->
+                        <div
+                            class="bg-white/40 backdrop-blur-xl p-6 rounded-[32px] border border-white/60 shadow-xl shadow-slate-200/50 space-y-4">
+                            <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+                                <div class="flex items-center gap-3">
+                                    <div
+                                        class="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-lg">
+                                        <i class="fa-solid fa-sliders"></i>
+                                    </div>
+                                    <div>
+                                        <h4
+                                            class="text-sm font-black text-slate-800 uppercase tracking-widest leading-none">
+                                            {{ t.filterTitle }}</h4>
+                                        <p class="text-[10px] font-bold text-slate-400 mt-1 uppercase">{{ t.filterMore
+                                            }}</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button @click="resetFilters"
+                                        class="px-4 py-2 text-xs font-black text-slate-500 hover:text-emerald-600 transition-colors uppercase tracking-tight">
+                                        <i class="fa-solid fa-arrow-rotate-left mr-1"></i> {{ t.filterReset }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <!-- City Filter -->
+                                <div class="relative group">
+                                    <i
+                                        class="fa-solid fa-city absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors"></i>
+                                    <input v-model="filters.city" type="text" :placeholder="t.filterCity"
+                                        class="w-full pl-11 pr-4 py-3 bg-white/60 border-2 border-transparent focus:border-emerald-500/20 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-300 outline-none transition-all shadow-sm">
+                                </div>
+                                <!-- Neighborhood Filter -->
+                                <div class="relative group">
+                                    <i
+                                        class="fa-solid fa-map-location-dot absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors"></i>
+                                    <input v-model="filters.neighborhood" type="text"
+                                        :placeholder="t.filterNeighborhood"
+                                        class="w-full pl-11 pr-4 py-3 bg-white/60 border-2 border-transparent focus:border-emerald-500/20 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-300 outline-none transition-all shadow-sm">
+                                </div>
+                                <!-- Street Filter -->
+                                <div class="relative group">
+                                    <i
+                                        class="fa-solid fa-road absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors"></i>
+                                    <input v-model="filters.street" type="text" :placeholder="t.filterStreet"
+                                        class="w-full pl-11 pr-4 py-3 bg-white/60 border-2 border-transparent focus:border-emerald-500/20 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-300 outline-none transition-all shadow-sm">
+                                </div>
+                                <!-- Parcel Filter -->
+                                <div class="relative group">
+                                    <i
+                                        class="fa-solid fa-hashtag absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors"></i>
+                                    <input v-model="filters.parcel" type="text" :placeholder="t.filterParcel"
+                                        class="w-full pl-11 pr-4 py-3 bg-white/60 border-2 border-transparent focus:border-emerald-500/20 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-300 outline-none transition-all shadow-sm">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="flex-1 bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 flex flex-col">
+                            <div class="overflow-x-auto h-full">
+                                <table class="w-full text-start border-collapse min-w-[700px]">
+                                    <thead class="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
+                                        <tr>
+                                            <th class="p-4 text-start text-[10px] font-bold text-slate-500 uppercase">{{
+                                                t.colParcel }}</th>
+                                            <th class="p-4 text-start text-[10px] font-bold text-slate-500 uppercase">{{
+                                                t.colLocation }}</th>
+                                            <th class="p-4 text-start text-[10px] font-bold text-slate-500 uppercase">{{
+                                                t.colType }}</th>
+                                            <th class="p-4 text-start text-[10px] font-bold text-slate-500 uppercase">{{
+                                                t.owner }}</th>
+                                            <th class="p-4 text-start text-[10px] font-bold text-slate-500 uppercase">{{
+                                                t.colValue }}</th>
+                                            <th class="p-4 text-center text-[10px] font-bold text-slate-500 uppercase">
+                                                {{ t.colAction }}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 italic font-medium">
+                                        <tr v-for="p in maskedProperties" :key="p.id"
+                                            class="hover:bg-slate-50/80 transition-colors group">
+                                            <td class="p-4">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                                                    <span class="text-sm font-bold text-slate-800">{{ p.ada }}/{{
+                                                        p.parsel }}</span>
+                                                </div>
+                                            </td>
+                                            <td class="p-4 text-xs text-slate-600">{{ translateData('locations',
+                                                p.location) }}</td>
+                                            <td class="p-4 text-xs">
+                                                <span class="bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">{{
+                                                    translateData('types', p.type) }}</span>
+                                            </td>
+                                            <td class="p-4 text-xs font-bold text-slate-800">{{ (lang === 'ar' &&
+                                                p.owner_name_ar) ? p.owner_name_ar : (p.owner_name || p.owner) }}</td>
+                                            <td class="p-4 text-sm font-black text-emerald-700">${{ (p.price ||
+                                                0).toLocaleString() }}</td>
+                                            <td class="p-4 text-center">
+                                                <button
+                                                    @click="selectedPropertyId = p.id; modals.activeProp = p; modals.deed = true"
+                                                    class="bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-900 transition flex items-center gap-2 mx-auto">
+                                                    <i class="fa-solid fa-file-invoice"></i> {{ t.btnViewDeed }}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== TRANSFER TAB ==================== -->
+                    <div v-if="currentTab === 'transfer'" class="animate-fade-in max-w-5xl mx-auto space-y-8">
+                        <!-- ==================== PROFESSIONAL STEPPER ==================== -->
+                        <div class="flex justify-between items-center max-w-4xl mx-auto mb-8 relative">
+                            <div class="absolute top-1/2 left-0 w-full h-0.5 bg-slate-100 -z-10 -translate-y-1/2"></div>
+                            <div class="absolute top-1/2 left-0 h-0.5 bg-emerald-500 -z-10 -translate-y-1/2 transition-all duration-700"
+                                :style="{ width: ((transferStep - 1) * 25) + '%' }"></div>
+
+                            <div v-for="s in 5" :key="s" class="flex flex-col items-center gap-2">
+                                <div :class="[
+                                    'w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all duration-500 ring-4 ring-white',
+                                    transferStep >= s ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' : 'bg-white border-2 border-slate-200 text-slate-400 shadow-sm'
+                                ]">
+                                    <i v-if="transferStep > s" class="fa-solid fa-check"></i>
+                                    <span v-else>{{ s }}</span>
+                                </div>
+                                <span :class="[
+                                    'text-[9px] font-black uppercase tracking-tighter transition-colors text-center w-20',
+                                    transferStep >= s ? 'text-emerald-700' : 'text-slate-400'
+                                ]">{{ t['transferStep' + s] }}</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                            <!-- Left: Form Area (Glassmorphism) -->
+                            <div
+                                class="lg:col-span-2 bg-white/80 backdrop-blur-xl p-8 rounded-[40px] shadow-2xl shadow-slate-200/50 border border-white/50 space-y-8 relative overflow-hidden min-h-[500px]">
+                                <div
+                                    class="absolute -top-24 -right-24 w-64 h-64 bg-emerald-50 rounded-full blur-3xl -z-10">
+                                </div>
+
+                                <!-- Simulation Overlay -->
+                                <transition name="fade">
+                                    <div v-if="simulating"
+                                        class="absolute inset-0 z-50 bg-white/60 backdrop-blur-md flex flex-col items-center justify-center p-12 text-center">
+                                        <div class="w-full max-w-xs space-y-6">
+                                            <div class="relative w-24 h-24 mx-auto">
+                                                <div class="absolute inset-0 border-4 border-slate-100 rounded-full">
+                                                </div>
+                                                <div
+                                                    class="absolute inset-0 border-4 border-emerald-500 rounded-full border-t-transparent animate-spin">
+                                                </div>
+                                                <div
+                                                    class="absolute inset-0 flex items-center justify-center text-emerald-600 text-2xl font-black">
+                                                    {{ simProgress }}%
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <h4 class="text-lg font-black text-slate-800 uppercase tracking-widest">
+                                                    {{ t.aiAnalyzing }}</h4>
+                                                <p class="text-xs text-slate-500 mt-2 font-bold">{{
+                                                    t.simBlockchainHasing }}</p>
+                                            </div>
+                                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                                <div class="bg-emerald-500 h-full transition-all duration-300"
+                                                    :style="{ width: simProgress + '%' }"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </transition>
+
+                                <div class="flex items-start justify-between">
+                                    <div class="flex items-center gap-4">
+                                        <div
+                                            class="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl flex items-center justify-center text-white text-3xl shadow-xl shadow-emerald-200">
+                                            <i class="fa-solid fa-handshake-simple"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-3xl font-black text-slate-900 leading-tight">{{
+                                                t.transferTitle }}</h3>
+                                            <div
+                                                class="flex items-center gap-2 text-emerald-600 font-bold text-[10px] uppercase tracking-widest mt-1">
+                                                <i class="fa-solid fa-shield-check"></i> {{ t.secureTransaction }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="hidden md:flex flex-col items-end">
+                                        <span class="text-[10px] font-black text-slate-400 uppercase mb-1">{{
+                                            t.estimatedTime }}</span>
+                                        <span
+                                            class="text-lg font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl">{{
+                                            t.estimatedTimeVal }}</span>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-6">
+                                    <!-- Stage 1: Selection -->
+                                    <div v-if="transferStep === 1" class="space-y-6 animate-fade-in">
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div class="group">
+                                                <label
+                                                    class="block text-xs font-black text-slate-400 uppercase mb-3 px-1">{{
+                                                    t.labelSelectProp }}</label>
+                                                <div class="relative">
+                                                    <i
+                                                        class="fa-solid fa-house-chimney absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition"></i>
+                                                    <select v-model="selectedPropertyId"
+                                                        class="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-emerald-500/20 focus:bg-white rounded-2xl outline-none transition-all font-bold text-slate-800 shadow-sm appearance-none cursor-pointer">
+                                                        <option v-for="p in properties" :key="p.id" :value="p.id">
+                                                            #{{ p.ada }}/{{ p.parsel }} — {{ translateData('locations',
+                                                            p.location) }}
+                                                        </option>
+                                                    </select>
+                                                    <i
+                                                        class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"></i>
+                                                </div>
+                                            </div>
+                                            <div class="group">
+                                                <label
+                                                    class="block text-xs font-black text-slate-400 uppercase mb-3 px-1">{{
+                                                    t.buyerName }}</label>
+                                                <div class="relative">
+                                                    <i
+                                                        class="fa-solid fa-user-plus absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition"></i>
+                                                    <input v-model="buyerName" type="text"
+                                                        :placeholder="t.buyerName + '...'"
+                                                        class="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent focus:border-emerald-500/20 focus:bg-white rounded-2xl text-slate-800 outline-none transition-all font-bold shadow-sm">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Action Button -->
+                                        <button @click="startTransferProcess"
+                                            class="group w-full relative h-16 bg-slate-950 text-white rounded-[20px] font-black text-lg overflow-hidden transition-all hover:scale-[1.01] active:scale-95 shadow-2xl shadow-slate-900/30">
+                                            <div
+                                                class="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                                            </div>
+                                            <div class="relative flex items-center justify-center gap-3">
+                                                <i class="fa-solid fa-shield-check text-emerald-400"></i>
+                                                {{ t.btnStartApp }}
+                                            </div>
+                                        </button>
+                                    </div>
+
+                                    <!-- Stage 2: Identity Verification -->
+                                    <div v-if="transferStep === 2" class="space-y-8 animate-fade-in text-center py-4">
+                                        <div class="relative w-48 h-48 mx-auto">
+                                            <div
+                                                class="absolute inset-0 rounded-full border-4 border-slate-100 animate-pulse">
+                                            </div>
+                                            <div class="absolute inset-0 flex items-center justify-center">
+                                                <i class="fa-solid fa-face-viewfinder text-7xl text-emerald-500"></i>
+                                            </div>
+                                            <div
+                                                class="absolute top-0 right-0 bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-200">
+                                                {{ t.simIdMatch }}
+                                            </div>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <h4 class="text-xl font-black text-slate-800 uppercase tracking-widest">{{
+                                                t.transferStep2 }}</h4>
+                                            <p class="text-sm text-slate-500 font-bold">{{ t.simVerifyingId }}</p>
+                                        </div>
+                                        <button @click="nextTransferStep"
+                                            class="group w-full relative h-16 bg-slate-950 text-white rounded-[20px] font-black text-lg overflow-hidden transition-all hover:scale-[1.01] active:scale-95 shadow-2xl shadow-slate-900/30">
+                                            <div
+                                                class="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                                            </div>
+                                            <div class="relative flex items-center justify-center gap-3">
+                                                <i class="fa-solid fa-fingerprint text-blue-400"></i>
+                                                {{ t.simNextStep }}
+                                            </div>
+                                        </button>
+                                    </div>
+
+                                    <!-- Stage 3: Payments & Fees -->
+                                    <div v-if="transferStep === 3" class="space-y-6 animate-fade-in">
+                                        <div class="bg-slate-50 p-6 rounded-3xl border border-slate-200 space-y-4">
+                                            <div
+                                                class="flex justify-between items-center text-sm font-bold text-slate-500 uppercase tracking-widest">
+                                                <span>{{ t.simTaxAmount }}</span>
+                                                <span class="text-slate-800">$1,200.00</span>
+                                            </div>
+                                            <div
+                                                class="flex justify-between items-center text-sm font-bold text-slate-500 uppercase tracking-widest">
+                                                <span>{{ t.simServiceFee }}</span>
+                                                <span class="text-slate-800">$450.00</span>
+                                            </div>
+                                            <div
+                                                class="pt-4 border-t border-slate-200 flex justify-between items-center text-lg font-black text-slate-900 uppercase tracking-widest">
+                                                <span>TOTAL</span>
+                                                <span class="text-emerald-700">$1,650.00</span>
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="bg-emerald-50 p-4 rounded-2xl flex items-center gap-4 text-emerald-700 border border-emerald-100">
+                                            <i class="fa-solid fa-circle-check text-2xl"></i>
+                                            <span class="text-xs font-black uppercase tracking-tight">{{
+                                                t.simPaymentApproved }}</span>
+                                        </div>
+                                        <button @click="nextTransferStep"
+                                            class="group w-full relative h-16 bg-slate-950 text-white rounded-[20px] font-black text-lg overflow-hidden transition-all hover:scale-[1.01] active:scale-95 shadow-2xl shadow-slate-900/30">
+                                            <div
+                                                class="absolute inset-0 bg-gradient-to-r from-emerald-600 to-teal-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                                            </div>
+                                            <div class="relative flex items-center justify-center gap-3">
+                                                <i class="fa-solid fa-receipt text-emerald-400"></i>
+                                                {{ t.simNextStep }}
+                                            </div>
+                                        </button>
+                                    </div>
+
+                                    <!-- Stage 4: Digital Approval & Success -->
+                                    <div v-if="transferStep === 4" class="space-y-8 animate-fade-in text-center">
+                                        <div
+                                            class="relative w-32 h-32 mx-auto bg-emerald-500 rounded-full flex items-center justify-center shadow-2xl shadow-emerald-200">
+                                            <i class="fa-solid fa-check text-5xl text-white"></i>
+                                            <div
+                                                class="absolute inset-0 rounded-full border-4 border-emerald-500 animate-ping opacity-25">
+                                            </div>
+                                        </div>
+                                        <div class="space-y-4">
+                                            <h3
+                                                class="text-2xl font-black text-slate-900 leading-tight uppercase tracking-widest">
+                                                {{ t.simTransferSuccess }}</h3>
+                                            <div
+                                                class="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-start space-y-2">
+                                                <p
+                                                    class="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                                                    Digital Deed Hash</p>
+                                                <p
+                                                    class="text-[11px] font-mono text-slate-600 break-all bg-white p-2 rounded border">
+                                                    0x7c42bd12398247bc98381eec05eed71e20260117</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex flex-col sm:flex-row gap-4">
+                                            <button @click="resetTransfer"
+                                                class="flex-1 h-14 bg-slate-100 text-slate-600 rounded-[16px] font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition">
+                                                <i class="fa-solid fa-arrow-left-long mr-2"></i> {{ t.simPreviousStep }}
+                                            </button>
+                                            <button @click="nextTransferStep"
+                                                class="flex-[2] h-14 bg-emerald-600 text-white rounded-[16px] font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition">
+                                                <i class="fa-solid fa-file-invoice mr-2"></i> {{ t.transferStep5 }}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Stage 5: Deed Preview & Print -->
+                                    <div v-if="transferStep === 5" class="space-y-6 animate-fade-in">
+                                        <div
+                                            class="overflow-hidden bg-white rounded-3xl border-2 border-slate-100 shadow-2xl p-8 relative">
+                                            <!-- Watermark -->
+                                            <div
+                                                class="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
+                                                <i class="fa-solid fa-shield-halved text-[240px] rotate-[-15deg]"></i>
+                                            </div>
+
+                                            <div class="relative space-y-8">
+                                                <!-- Deed Header -->
+                                                <div
+                                                    class="flex justify-between items-start border-b-2 border-slate-50 pb-6">
+                                                    <div class="flex items-center gap-3">
+                                                        <div
+                                                            class="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white text-xl">
+                                                            <i class="fa-solid fa-scroll"></i>
+                                                        </div>
+                                                        <div>
+                                                            <h4
+                                                                class="text-xl font-black text-slate-900 uppercase tracking-tighter">
+                                                                {{ t.deedPreviewTitle }}</h4>
+                                                            <p class="text-[10px] font-bold text-slate-400 uppercase">{{
+                                                                t.officialSeal }}</p>
+                                                        </div>
+                                                    </div>
+                                                    <div class="text-right">
+                                                        <p class="text-[9px] font-black text-slate-400 uppercase">{{
+                                                            t.deedSerial }}</p>
+                                                        <p class="text-sm font-mono font-bold text-slate-800">
+                                                            SRY-7728-XL</p>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Deed Content Grid -->
+                                                <div class="grid grid-cols-2 gap-8 text-start">
+                                                    <div>
+                                                        <p class="text-[9px] font-black text-slate-400 uppercase mb-1">
+                                                            {{ t.lblOwner }}</p>
+                                                        <p class="text-sm font-bold text-slate-800">{{ buyerName }}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[9px] font-black text-slate-400 uppercase mb-1">
+                                                            {{ t.lblParcel }}</p>
+                                                        <p class="text-sm font-bold text-slate-800">#{{
+                                                            selectedProperty?.ada }}/{{ selectedProperty?.parsel }}</p>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[9px] font-black text-slate-400 uppercase mb-1">
+                                                            {{ t.colLocation }}</p>
+                                                        <p class="text-sm font-bold text-slate-800">{{
+                                                            translateData('locations', selectedProperty?.location) }}
+                                                        </p>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[9px] font-black text-slate-400 uppercase mb-1">
+                                                            {{ t.deedIssueDate }}</p>
+                                                        <p class="text-sm font-bold text-slate-800">{{ new
+                                                            Date().toLocaleDateString() }}</p>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Security Hash -->
+                                                <div class="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                                                    <div class="flex items-center gap-2 mb-2">
+                                                        <i class="fa-solid fa-link text-emerald-600 text-xs"></i>
+                                                        <span
+                                                            class="text-[9px] font-black text-emerald-800 uppercase tracking-widest">Digital
+                                                            Asset Fingerprint</span>
+                                                    </div>
+                                                    <p
+                                                        class="text-[10px] font-mono text-emerald-700/70 break-all leading-tight">
+                                                        SHA256: 8C3D2E...7F1B4A</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex gap-4">
+                                            <button @click="resetTransfer"
+                                                class="flex-1 h-14 bg-slate-100 text-slate-600 rounded-[16px] font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition">
+                                                {{ t.simPreviousStep }}
+                                            </button>
+                                            <button @click="resetTransfer"
+                                                class="flex-1 h-14 bg-blue-600 text-white rounded-[16px] font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 transition">
+                                                <i class="fa-solid fa-print mr-2"></i> {{ t.btnPrintDeed }}
+                                            </button>
+                                            <button @click="resetTransfer"
+                                                class="flex-[2] h-14 bg-emerald-600 text-white rounded-[16px] font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition">
+                                                <i class="fa-solid fa-file-pdf mr-2"></i> {{ t.btnDownloadPDF }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Trust Seals -->
+                                <div
+                                    class="pt-6 border-t border-slate-100 flex items-center justify-between opacity-60 transition hover:opacity-100">
+                                    <div class="flex items-center gap-2">
+                                        <div
+                                            class="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                                            <i class="fa-solid fa-stamp text-xs"></i>
+                                        </div>
+                                        <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">{{
+                                            t.officialSeal }}</span>
+                                    </div>
+                                    <div class="flex items-center gap-6">
+                                        <div class="flex items-center gap-2 text-emerald-800/40">
+                                            <i class="fa-solid fa-shield-halved text-xl"></i>
+                                            <div class="flex flex-col">
+                                                <span class="text-[7px] font-black leading-none uppercase">Republic
+                                                    of</span>
+                                                <span class="text-[8px] font-black leading-none uppercase">Syria</span>
+                                            </div>
+                                        </div>
+                                        <div class="h-8 w-px bg-slate-200"></div>
+                                        <div class="flex items-center gap-2">
+                                            <i class="fa-solid fa-qrcode text-2xl text-slate-300"></i>
+                                            <div class="flex flex-col text-[7px] font-black text-slate-400">
+                                                <span>SCAN FOR</span>
+                                                <span>VERIFICATION</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Right: Property Insights (Floating Card) -->
+                            <div class="space-y-6">
+                                <transition name="fade">
+                                    <div v-if="selectedProperty"
+                                        class="bg-gradient-to-br from-emerald-600 to-teal-700 p-8 rounded-[40px] text-white shadow-2xl relative overflow-hidden group">
+                                        <!-- Animated Background shapes -->
+                                        <div
+                                            class="absolute -bottom-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-1000">
+                                        </div>
+
+                                        <div class="relative space-y-6">
+                                            <div class="flex justify-between items-start">
+                                                <div>
+                                                    <p
+                                                        class="text-emerald-100/60 text-[10px] font-black uppercase tracking-widest">
+                                                        {{ t.selectedPropertySummary }}</p>
+                                                    <h4 class="text-2xl font-black mt-1">#{{ selectedProperty.ada }}/{{
+                                                        selectedProperty.parsel }}</h4>
+                                                </div>
+                                                <div
+                                                    class="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center">
+                                                    <i class="fa-solid fa-location-crosshairs"></i>
+                                                </div>
+                                            </div>
+
+                                            <div class="space-y-4">
+                                                <div class="bg-white/10 backdrop-blur-sm p-4 rounded-2xl space-y-1">
+                                                    <span
+                                                        class="block text-emerald-200 text-[9px] font-black uppercase tracking-tighter">{{
+                                                        t.owner }}</span>
+                                                    <span class="block font-bold truncate">
+                                                        {{ loginRole === 'realtor' ? t.maskedOwner :
+                                                        (translateData('owner', selectedProperty.owner_name_ar) ||
+                                                        selectedProperty.owner) }}
+                                                    </span>
+                                                </div>
+                                                <div class="grid grid-cols-2 gap-4">
+                                                    <div class="bg-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                                                        <span
+                                                            class="block text-emerald-200 text-[9px] font-black uppercase tracking-tighter">{{
+                                                            t.area }}</span>
+                                                        <span class="block font-bold">{{ selectedProperty.area_text ||
+                                                            selectedProperty.area + ' m²' }}</span>
+                                                    </div>
+                                                    <div class="bg-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                                                        <span
+                                                            class="block text-emerald-200 text-[9px] font-black uppercase tracking-tighter">{{
+                                                            t.marketValue }}</span>
+                                                        <span class="block font-bold leading-none text-lg">${{
+                                                            selectedProperty.price?.toLocaleString() }}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="flex items-center gap-3 pt-2 text-emerald-100">
+                                                <div
+                                                    class="w-6 h-6 bg-emerald-400 rounded-full flex items-center justify-center text-emerald-900 text-[10px]">
+                                                    <i class="fa-solid fa-check"></i>
+                                                </div>
+                                                <span class="text-[10px] font-bold tracking-tight">{{ t.verifiedByAi
+                                                    }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-else
+                                        class="bg-slate-100 border-2 border-dashed border-slate-300 p-12 rounded-[40px] flex flex-col items-center justify-center text-center opacity-60">
+                                        <i class="fa-solid fa-handshake-angle text-4xl text-slate-300 mb-4"></i>
+                                        <p class="text-slate-500 font-bold text-sm">{{ t.labelSelectProp }}</p>
+                                    </div>
+                                </transition>
+
+                                <!-- Side stats card -->
+                                <div
+                                    class="bg-white p-6 rounded-[30px] border border-slate-100 shadow-xl shadow-slate-100/50">
+                                    <h5 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">{{
+                                        t.transferStats }}</h5>
+                                    <div class="space-y-3">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                            <span class="text-xs font-bold text-slate-600">Blockchain Network: <span
+                                                    class="text-slate-900">Active</span></span>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                                            <span class="text-xs font-bold text-slate-600">Validator Nodes: <span
+                                                    class="text-slate-900">12 Online</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== VALUATION TAB ==================== -->
+                    <div v-if="currentTab === 'valuation'" class="animate-fade-in max-w-4xl mx-auto">
+                        <div
+                            class="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-12">
+                            <div class="space-y-6">
+                                <h3 class="text-2xl font-black text-slate-800 flex items-center gap-3">
+                                    <i class="fa-solid fa-calculator text-emerald-600"></i> {{ t.navValuation }}
+                                </h3>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">{{ t.colCity
+                                        }}</label>
+                                    <select v-model="valRegion"
+                                        class="w-full border-2 border-slate-100 rounded-xl p-3 bg-slate-50 font-bold">
+                                        <option value="mezzeh">Damascus / Mezzeh</option>
+                                        <option value="kafr-souseh">Damascus / Kafr Souseh</option>
+                                        <option value="shahba">Aleppo / Shahba</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2">{{ t.area }}
+                                        (m²)</label>
+                                    <input v-model.number="valArea" type="number"
+                                        class="w-full border-2 border-slate-100 rounded-xl p-3 font-bold">
+                                </div>
+                                <button
+                                    class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold hover:bg-emerald-700 transition shadow-lg">{{
+                                    t.btnRecalculate }}</button>
+                            </div>
+                            <div
+                                class="bg-slate-950 p-8 rounded-3xl text-white flex flex-col items-center justify-center text-center space-y-4">
+                                <p class="text-emerald-400 text-xs font-bold uppercase tracking-widest">{{ t.estValue }}
+                                </p>
+                                <p class="text-5xl font-black text-white">{{ valuationResult }}</p>
+                                <p class="text-[10px] text-slate-500 max-w-[200px] italic">{{ t.calculationNote }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==================== EXPROPRIATION TAB ==================== -->
+                    <div v-if="currentTab === 'expropriation'" class="animate-fade-in max-w-5xl mx-auto space-y-8">
+                        <div
+                            class="bg-white/80 backdrop-blur-xl p-10 rounded-[40px] shadow-2xl border border-white/50 relative overflow-hidden">
+                            <!-- Background Accent -->
+                            <div
+                                class="absolute -top-24 -left-24 w-80 h-80 bg-rose-50 rounded-full blur-3xl -z-10 opacity-50">
+                            </div>
+                            <div
+                                class="absolute -bottom-24 -right-24 w-80 h-80 bg-blue-50 rounded-full blur-3xl -z-10 opacity-50">
+                            </div>
+
+                            <div class="flex flex-col lg:flex-row gap-12">
+                                <!-- Left: Search & Query -->
+                                <div class="flex-1 space-y-8">
+                                    <div class="flex items-center gap-4">
+                                        <div
+                                            class="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner">
+                                            <i class="fa-solid fa-gavel"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-2xl font-black text-slate-900 tracking-tighter">{{
+                                                t.exproTitle }}</h3>
+                                            <p class="text-sm text-slate-500 font-medium">{{ t.exproSubtitle }}</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-6">
+                                        <div class="space-y-2">
+                                            <label
+                                                class="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{{
+                                                t.lblParcel }}</label>
+                                            <div class="relative group">
+                                                <select v-model="exproSelectedId"
+                                                    class="w-full h-16 bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 text-sm font-bold text-slate-800 outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 transition appearance-none cursor-pointer">
+                                                    <option value="" disabled>{{ t.selectProperty }}</option>
+                                                    <option v-for="p in properties" :key="p.id" :value="p.id">
+                                                        #{{ p.ada }}/{{ p.parsel }} - {{ p.owner }}
+                                                    </option>
+                                                </select>
+                                                <i
+                                                    class="fa-solid fa-chevron-down absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:rotate-180 transition pointer-events-none"></i>
+                                            </div>
+                                        </div>
+
+                                        <button @click="startExproQuery" :disabled="!exproSelectedId || exproQuerying"
+                                            class="w-full h-16 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-slate-200 hover:bg-black transition disabled:opacity-50 disabled:cursor-not-allowed group relative overflow-hidden">
+                                            <span v-if="!exproQuerying" class="flex items-center justify-center gap-3">
+                                                <i class="fa-solid fa-magnifying-glass-chart text-rose-400"></i>
+                                                {{ t.exproQueryBtn }}
+                                            </span>
+                                            <span v-else class="flex items-center justify-center gap-3">
+                                                <i class="fa-solid fa-circle-notch animate-spin"></i>
+                                                {{ t.exproProgress }}
+                                            </span>
+                                            <div class="absolute bottom-0 left-0 h-1 bg-rose-500 transition-all duration-300"
+                                                :style="{ width: exproProgress + '%' }"></div>
+                                        </button>
+                                    </div>
+
+                                    <!-- Trust Indicator -->
+                                    <div
+                                        class="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 flex items-center gap-4">
+                                        <i class="fa-solid fa-shield-check text-blue-600 text-xl"></i>
+                                        <p class="text-[10px] font-bold text-blue-800 leading-tight">
+                                            {{ t.officialSourceNote }}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Right: Results Area -->
+                                <div class="flex-1 min-h-[400px]">
+                                    <transition name="fade" mode="out-in">
+                                        <!-- No Search State -->
+                                        <div v-if="!exproResult" key="empty"
+                                            class="h-full border-2 border-dashed border-slate-100 rounded-[32px] flex flex-col items-center justify-center text-center p-8">
+                                            <div
+                                                class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 text-3xl mb-4">
+                                                <i class="fa-solid fa-fingerprint"></i>
+                                            </div>
+                                            <p class="text-sm font-bold text-slate-400 italic">Sorgulamak istediğiniz
+                                                taşınmazı seçerek<br>resmi kayıtları getirin.</p>
+                                        </div>
+
+                                        <!-- Results State -->
+                                        <div v-else key="result" class="h-full space-y-6 animate-fade-in">
+                                            <!-- Status Header -->
+                                            <div :class="[
+                                                'p-6 rounded-[32px] border flex items-center justify-between',
+                                                exproResult.hasRestriction ? 'bg-rose-50 border-rose-100' : 'bg-emerald-50 border-emerald-100'
+                                            ]">
+                                                <div class="flex items-center gap-4">
+                                                    <div :class="[
+                                                        'w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-sm',
+                                                        exproResult.hasRestriction ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+                                                    ]">
+                                                        <i
+                                                            :class="exproResult.hasRestriction ? 'fa-solid fa-triangle-exclamation' : 'fa-solid fa-check-shield'"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-[10px] font-black uppercase tracking-widest"
+                                                            :class="exproResult.hasRestriction ? 'text-rose-600' : 'text-emerald-600'">
+                                                            {{ t.lblLegalStatus }}
+                                                        </p>
+                                                        <h4 class="text-lg font-black text-slate-800 tracking-tighter">
+                                                            {{ exproResult.hasRestriction ? t.statusActive :
+                                                            t.statusNone }}
+                                                        </h4>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Annotations List -->
+                                            <div
+                                                class="bg-white rounded-[32px] border-2 border-slate-50 p-6 space-y-4 shadow-sm">
+                                                <h5
+                                                    class="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">
+                                                    {{ t.lblAnnotations }}</h5>
+
+                                                <div v-if="!exproResult.hasRestriction"
+                                                    class="p-8 text-center text-slate-400 italic text-xs leading-relaxed">
+                                                    {{ t.exproNoRecord }}
+                                                </div>
+
+                                                <div v-else class="space-y-3">
+                                                    <div v-for="(anno, idx) in exproResult.annotations" :key="idx"
+                                                        class="p-4 bg-slate-50 rounded-2xl flex items-center gap-4 border border-slate-100 hover:border-rose-200 transition">
+                                                        <div
+                                                            class="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-rose-500 shadow-sm">
+                                                            <i class="fa-solid fa-file-signature"></i>
+                                                        </div>
+                                                        <div class="flex-1">
+                                                            <p class="text-xs font-bold text-slate-800">{{ anno.type }}
+                                                            </p>
+                                                            <p class="text-[9px] font-bold text-slate-400 uppercase">{{
+                                                                anno.date }} • {{ anno.number }}</p>
+                                                        </div>
+                                                        <i class="fa-solid fa-circle-exclamation text-rose-300"></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Action Warning -->
+                                            <div v-if="exproResult.hasRestriction"
+                                                class="p-4 bg-rose-600 text-white rounded-2xl text-center space-y-1 shadow-lg shadow-rose-200">
+                                                <p class="text-[10px] font-black uppercase tracking-widest px-2">{{
+                                                    t.exproActiveRecord }}</p>
+                                                <p class="text-[10px] opacity-90 font-medium">Bu taşınmazın devri şu an
+                                                    için resmi olarak kısıtlanmıştır.</p>
+                                            </div>
+                                        </div>
+                                    </transition>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ==================== LOGS TAB ==================== -->
+                <div v-if="currentTab === 'logs' && loginRole === 'officer'" class="animate-fade-in space-y-6 p-6">
+                    <div
+                        class="bg-white rounded-[32px] shadow-xl border border-slate-200 overflow-hidden max-w-6xl mx-auto">
+                        <!-- Log Header -->
+                        <div
+                            class="p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-50/50">
+                            <div>
+                                <h3 class="text-2xl font-black text-slate-900 tracking-tighter flex items-center gap-3">
+                                    <i class="fa-solid fa-shield-halved text-rose-600"></i>
+                                    {{ t.navLogs }}
+                                </h3>
+                                <p class="text-sm text-slate-500 font-medium italic">Sistem üzerindeki tüm işlemler
+                                    gerçek zamanlı olarak takip edilmektedir.</p>
+                            </div>
+                            <div class="w-full md:w-72 relative">
+                                <i
+                                    class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                                <input type="text" :placeholder="t.logSearch"
+                                    class="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl outline-none focus:border-rose-500 transition font-bold text-sm">
+                            </div>
+                        </div>
+
+                        <!-- Log Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr
+                                        class="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                                        <th class="px-8 py-5">{{ t.colLogUser }}</th>
+                                        <th class="px-6 py-5">{{ t.colLogAction }}</th>
+                                        <th class="px-6 py-5">{{ t.colLogDate }}</th>
+                                        <th class="px-6 py-5">{{ t.colLogIP }}</th>
+                                        <th class="px-8 py-5 text-right">{{ t.colLogDetail }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-50">
+                                    <tr v-for="log in auditLogs" :key="log.id"
+                                        class="hover:bg-slate-50 transition-colors group">
+                                        <td class="px-8 py-5">
+                                            <div class="flex items-center gap-3">
+                                                <div :class="[
+                                                    'w-9 h-9 rounded-xl flex items-center justify-center text-sm shadow-sm',
+                                                    log.role === 'officer' ? 'bg-rose-100 text-rose-600' : (log.role === 'realtor' ? 'bg-blue-100 text-blue-600' : 'bg-emerald-100 text-emerald-600')
+                                                ]">
+                                                    <i
+                                                        :class="log.role === 'officer' ? 'fa-solid fa-user-shield' : (log.role === 'realtor' ? 'fa-solid fa-user-tie' : 'fa-solid fa-user')"></i>
+                                                </div>
+                                                <div>
+                                                    <p class="text-sm font-black text-slate-800 leading-none mb-1">{{
+                                                        log.user }}</p>
+                                                    <p
+                                                        class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                                        {{ t['role' + capitalize(log.role)] }}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <span :class="[
+                                                'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider',
+                                                log.action.includes('Giriş') || log.action.includes('Login') || log.action.includes('دخول') ? 'bg-emerald-100 text-emerald-700' : (log.action.includes('İptal') || log.action.includes('Logout') || log.action.includes('خروج') ? 'bg-slate-100 text-slate-600' : 'bg-blue-100 text-blue-700')
+                                            ]">
+                                                {{ log.action }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <p class="text-xs font-bold text-slate-600">{{ log.date }}</p>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <code
+                                                class="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">{{ log.ip }}</code>
+                                        </td>
+                                        <td class="px-8 py-5 text-right">
+                                            <p class="text-xs font-bold text-slate-500">{{ log.detail }}</p>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="auditLogs.length === 0">
+                                        <td colspan="5" class="px-8 py-20 text-center">
+                                            <div class="flex flex-col items-center opacity-20">
+                                                <i class="fa-solid fa-database text-6xl mb-4"></i>
+                                                <p class="font-black text-xl uppercase tracking-tighter">Henüz log kaydı
+                                                    bulunmuyor</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- ==================== MODALS ==================== -->
+
+        <!-- OCR Map Picker Modal -->
+        <transition name="modal">
+            <div v-if="modals.ocrMap"
+                class="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                <div
+                    class="bg-white w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col relative">
+                    <div class="p-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                        <h3 class="font-bold flex items-center gap-2">
+                            <i class="fa-solid fa-map-pin text-emerald-400"></i> {{ t.parcelSelection }}
+                        </h3>
+                        <button @click="modals.ocrMap = false" class="hover:text-red-400 transition">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                    </div>
+                    <div class="flex-1 relative bg-slate-100">
+                        <div id="ocr-map-picker" class="w-full h-full z-10"></div>
+                        <div
+                            class="absolute bottom-6 left-1/2 -translate-x-1/2 z-[500] bg-white px-6 py-3 rounded-full shadow-xl border border-slate-200 flex gap-4 items-center">
+                            <p class="text-sm font-bold text-slate-700" v-if="tempSelectedParcel">{{ t.selectedParcel
+                                }}: <span class="text-emerald-600">#{{ tempSelectedParcel }}</span></p>
+                            <p class="text-sm text-slate-400" v-else>{{ t.selectParcel }}</p>
+                            <button @click="confirmOcrMapSelection" :disabled="!tempSelectedParcel"
+                                class="bg-slate-900 text-white px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-50 hover:bg-slate-800 transition">{{
+                                t.confirmSelection }}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Parcel Action Modal -->
+        <transition name="modal">
+            <div v-if="modals.parcelAction"
+                class="fixed inset-0 z-[11000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+                @click.self="modals.parcelAction = false">
+                <div class="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden animate-scale-up">
+                    <div class="p-8 text-center space-y-6">
+                        <div
+                            class="w-20 h-20 bg-emerald-100 rounded-3xl mx-auto flex items-center justify-center text-emerald-600 text-3xl">
+                            <i class="fa-solid fa-location-crosshairs"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-black text-slate-800">{{ t.parcelAction }}</h3>
+                            <p class="text-slate-500 text-sm mt-1" v-if="modals.activeProp">#{{ modals.activeProp.ada
+                                }}/{{ modals.activeProp.parsel }} {{ t.selectProperty }}</p>
+                        </div>
+                        <div class="grid grid-cols-1 gap-3">
+                            <button @click="modals.parcelAction = false; modals.deed = true"
+                                class="flex items-center justify-between p-4 bg-slate-50 hover:bg-emerald-50 border-2 border-slate-100 hover:border-emerald-200 rounded-2xl transition-all group text-start">
+                                <div class="flex items-center gap-3">
+                                    <div
+                                        class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-slate-400 group-hover:text-emerald-500 transition">
+                                        <i class="fa-solid fa-file-invoice"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-bold text-slate-800">{{ t.viewDeed }}</p>
+                                        <p class="text-[10px] text-slate-400">{{ t.viewDeedDesc }}</p>
+                                    </div>
+                                </div>
+                                <i
+                                    class="fa-solid fa-chevron-right text-slate-300 group-hover:text-emerald-300 transition"></i>
+                            </button>
+                            <button @click="modals.parcelAction = false; modals.aiAnalysis = true"
+                                class="flex items-center justify-between p-4 bg-slate-50 hover:bg-blue-50 border-2 border-slate-100 hover:border-blue-200 rounded-2xl transition-all group text-start">
+                                <div class="flex items-center gap-3">
+                                    <div
+                                        class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition animate-pulse-slow">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-bold text-slate-800">{{ t.aiAnalysisAction }}</p>
+                                        <p class="text-[10px] text-slate-400">{{ t.aiAnalysisDesc }}</p>
+                                    </div>
+                                </div>
+                                <i
+                                    class="fa-solid fa-chevron-right text-slate-300 group-hover:text-blue-300 transition"></i>
+                            </button>
+                        </div>
+                        <button @click="modals.parcelAction = false"
+                            class="text-xs font-bold text-slate-400 hover:text-slate-600 transition tracking-widest uppercase">{{
+                            t.close }}</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Title Deed Modal -->
+        <transition name="modal">
+            <div v-if="modals.deed && modals.activeProp"
+                class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+                @click.self="modals.deed = false">
+                <div
+                    class="relative w-full max-w-4xl h-[90vh] flex flex-col items-center justify-center pointer-events-none">
+                    <button @click="modals.deed = false"
+                        class="absolute -top-4 -right-4 md:-right-8 w-12 h-12 bg-red-800 text-white rounded-full flex items-center justify-center z-[10000] shadow-2xl hover:bg-red-900 hover:scale-110 transition cursor-pointer pointer-events-auto border-4 border-white">
+                        <i class="fa-solid fa-xmark text-2xl"></i>
+                    </button>
+                    <div class="bg-white w-full h-full shadow-2xl overflow-y-auto pointer-events-auto relative tapu-bg scale-100 origin-center"
+                        :dir="lang === 'ar' ? 'rtl' : 'ltr'">
+                        <div class="min-h-full p-2 border-[16px] border-double border-slate-900 m-2">
+                            <div class="h-full border-[2px] border-gold-600 p-6 relative">
+
+                                <!-- Watermark -->
+                                <div
+                                    class="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none overflow-hidden">
+                                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Emblem_of_Syria_%282025%E2%80%93present%29.svg/2560px-Emblem_of_Syria_%282025%E2%80%93present%29.svg.png"
+                                        class="w-[800px] grayscale">
+                                </div>
+
+                                <!-- Header -->
+                                <div class="text-center mb-12 relative z-10 pt-8">
+                                    <div class="flex justify-center items-center gap-6 mb-4">
+                                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Emblem_of_Syria_%282025%E2%80%93present%29.svg/2560px-Emblem_of_Syria_%282025%E2%80%93present%29.svg.png"
+                                            class="h-24 drop-shadow-xl">
+                                    </div>
+                                    <h1
+                                        class="text-3xl md:text-4xl font-black text-slate-900 uppercase tracking-[0.2em] tapu-font mb-2">
+                                        {{ t.syrianRepublic }}</h1>
+                                    <h2
+                                        class="text-xl md:text-2xl font-bold text-slate-700 tapu-font border-b-2 border-slate-900 inline-block pb-2 px-12">
+                                        {{ t.cadastreDirectorate }}</h2>
+                                    <div class="mt-8">
+                                        <h3
+                                            class="text-5xl md:text-6xl font-black text-red-900 border-4 border-double border-red-900 inline-block px-12 py-3 transform -rotate-1 shadow-sm tapu-font">
+                                            {{ t.modalDeedTitle }}</h3>
+                                    </div>
+                                </div>
+
+                                <!-- Content -->
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10 px-4 md:px-12">
+                                    <div class="space-y-4">
+                                        <h4
+                                            class="font-bold text-xl text-slate-900 border-b-4 border-gold-600 pb-2 mb-4 tapu-font">
+                                            <i class="fa-solid fa-hotel me-2"></i> {{ t.propertyInfo }}
+                                        </h4>
+                                        <table class="w-full text-sm tapu-font border-collapse">
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500 w-1/3">{{ t.colCity }}</td>
+                                                <td class="py-2 font-bold text-lg text-slate-900">{{
+                                                    translateData('locations', modals.activeProp.location) }}</td>
+                                            </tr>
+                                            <tr v-if="modals.activeProp.directorate" class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.directorate }}</td>
+                                                <td class="py-2 font-bold text-slate-900">{{
+                                                    translateData('directorates', modals.activeProp.directorate) }}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.colParcel }}</td>
+                                                <td class="py-2 font-bold text-lg text-slate-900">{{
+                                                    modals.activeProp.ada }}/{{ modals.activeProp.parsel }}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.colType }}</td>
+                                                <td class="py-2 font-bold text-lg text-slate-900">{{
+                                                    translateData('types', modals.activeProp.type) }}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.area }}</td>
+                                                <td class="py-2 font-bold text-lg text-slate-900">{{
+                                                    modals.activeProp.area_text || modals.activeProp.area }} {{ t.m2 }}
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+                                    <div class="space-y-4">
+                                        <h4
+                                            class="font-bold text-xl text-slate-900 border-b-4 border-gold-600 pb-2 mb-4 tapu-font">
+                                            <i class="fa-solid fa-user-shield me-2"></i> {{ t.ownerInfo }}
+                                        </h4>
+                                        <table class="w-full text-sm tapu-font border-collapse">
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500 w-1/3">{{ t.ownerName }}</td>
+                                                <td class="py-2 font-bold text-xl text-slate-900">{{
+                                                    (lang === 'ar' && modals.activeProp.owner_name_ar) ?
+                                                    modals.activeProp.owner_name_ar : (modals.activeProp.owner_name ||
+                                                    modals.activeProp.owner) }}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.share }}</td>
+                                                <td class="py-2 font-bold text-slate-900">{{
+                                                    translateData('shares', modals.activeProp.share_text) || t.fullShare
+                                                    }}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.transactionType }}</td>
+                                                <td class="py-2 text-slate-900">
+                                                    <span class="font-bold">{{ translateData('transactions',
+                                                        modals.activeProp.transaction_type) ||
+                                                        t.registration }}</span>
+                                                    <br>
+                                                    <span class="text-xs text-slate-500">{{ t.dailyRegisterNo }}: {{
+                                                        modals.activeProp.daily_register_no || '---' }}</span>
+                                                </td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.transactionDate }}</td>
+                                                <td class="py-2 font-bold text-slate-900">{{
+                                                    modals.activeProp.signature_date || '---' }}</td>
+                                            </tr>
+                                            <tr class="border-b border-slate-300">
+                                                <td class="py-2 text-slate-500">{{ t.electronicValidation }}</td>
+                                                <td class="py-2 font-mono text-slate-900 tracking-widest">SY-{{
+                                                    modals.activeProp.daily_register_no ||
+                                                    Math.floor(Math.random()*900000)+100000 }}</td>
+                                            </tr>
+                                        </table>
+                                        <div class="mt-6 flex justify-end">
+                                            <div class="text-center">
+                                                <img :src="`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=SYRIAN-DEED-${modals.activeProp.ada}-${modals.activeProp.parsel}`"
+                                                    class="w-24 h-24 border-2 border-slate-900 p-1 mb-1">
+                                                <p class="text-[8px] font-mono text-slate-500">{{
+                                                    t.electronicVerification }}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Footer -->
+                                <div
+                                    class="mt-16 flex flex-col md:flex-row justify-between items-end px-12 pb-12 relative z-10">
+                                    <div class="text-center"></div>
+                                    <div class="text-center relative mt-8 md:mt-0">
+                                        <div
+                                            class="absolute -top-12 left-1/2 transform -translate-x-1/2 w-40 h-40 border-4 border-red-800 rounded-full opacity-80 flex items-center justify-center animate-pulse">
+                                            <div
+                                                class="w-36 h-36 border-2 border-red-800 rounded-full flex items-center justify-center">
+                                                <div
+                                                    class="text-center text-red-800 font-bold text-[10px] uppercase tracking-widest rotate-[-15deg]">
+                                                    {{ t.officialSeal }}</div>
+                                            </div>
+                                        </div>
+                                        <p class="font-bold text-2xl text-blue-900 tapu-font italic relative z-10">Ahmad
+                                            Al-Faruqi</p>
+                                        <div class="w-64 h-0.5 bg-slate-900 my-2"></div>
+                                        <p class="text-sm font-bold uppercase tracking-widest">{{ t.officialTitle }}</p>
+                                    </div>
+                                </div>
+
+                                <!-- Print Button -->
+                                <div class="absolute bottom-4 left-4 no-print flex gap-2">
+                                    <button onclick="window.print()"
+                                        class="bg-slate-800 text-white px-4 py-2 rounded shadow hover:bg-slate-700 text-xs font-bold">
+                                        <i class="fa-solid fa-print"></i> {{ t.print }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- AI Analysis Modal -->
+        <transition name="modal">
+            <div v-if="modals.aiAnalysis"
+                class="fixed inset-0 z-[11000] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl"
+                @click.self="modals.aiAnalysis = false">
+                <div
+                    class="bg-slate-50 w-full max-w-5xl h-[85vh] rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative border border-white/20 animate-scale-up">
+
+                    <!-- Close Button -->
+                    <button @click="modals.aiAnalysis = false"
+                        class="absolute top-6 right-6 z-20 w-10 h-10 bg-white shadow-lg rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 transition">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+
+                    <!-- Header -->
+                    <div class="p-8 bg-white border-b border-slate-200 shrink-0">
+                        <div class="flex items-center gap-4">
+                            <div
+                                class="w-16 h-16 bg-blue-600 text-white rounded-[24px] flex items-center justify-center text-2xl shadow-xl shadow-blue-500/20">
+                                <i class="fa-solid fa-brain"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-2xl font-black text-slate-900">{{ t.aiAnalysis }}</h3>
+                                <p class="text-slate-500 font-medium flex items-center gap-2">
+                                    <i class="fa-solid fa-location-dot text-blue-500"></i>
+                                    {{ translateData('locations', modals.activeProp?.location) }} | {{ t.colParcel }}:
+                                    {{ modals.activeProp?.ada
+                                    }}/{{ modals.activeProp?.parsel }}
+                                </p>
+                            </div>
+                            <div
+                                class="ms-auto flex items-center gap-2 bg-emerald-50 px-4 py-2 rounded-2xl border border-emerald-100">
+                                <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                                <span class="text-xs font-black text-emerald-700 uppercase tracking-tighter">{{
+                                    t.currentData }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Body -->
+                    <div class="flex-1 overflow-y-auto p-8 space-y-8">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                            <!-- Trend Card -->
+                            <div
+                                class="md:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-6">
+                                <div class="flex justify-between items-center">
+                                    <h4 class="font-black text-slate-800 flex items-center gap-2 italic">
+                                        <i class="fa-solid fa-chart-line text-blue-600"></i> {{ t.priceTrend }}
+                                    </h4>
+                                    <span class="text-emerald-500 font-black text-lg">+32.4%</span>
+                                </div>
+                                <div class="h-48 flex items-end justify-between gap-2 px-2">
+                                    <div v-for="(v, i) in aiTrendData" :key="i"
+                                        class="flex-1 bg-blue-500/10 rounded-t-lg relative hover:bg-blue-500 transition-all cursor-help group"
+                                        :style="{ height: v + '%' }">
+                                        <div
+                                            class="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
+                                            ${{ (1200 + v * 10).toLocaleString() }}/m²
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                                    <span>{{ t.trendQ1 }}</span>
+                                    <span>{{ t.trendQ2 }}</span>
+                                    <span>{{ t.trendQ3 }}</span>
+                                    <span>{{ t.trendCurrent }}</span>
+                                </div>
+                            </div>
+
+                            <!-- Score Card -->
+                            <div
+                                class="bg-slate-900 rounded-[32px] p-8 text-white flex flex-col items-center justify-center text-center space-y-4 relative overflow-hidden">
+                                <div class="absolute -top-10 -right-10 w-40 h-40 bg-blue-500/20 blur-3xl rounded-full">
+                                </div>
+                                <p class="text-blue-400 text-xs font-bold uppercase tracking-widest mb-2">{{
+                                    t.investmentScore }}</p>
+                                <div class="relative">
+                                    <svg class="w-32 h-32 transform -rotate-90">
+                                        <circle cx="64" cy="64" r="58" stroke="currentColor" stroke-width="8"
+                                            fill="transparent" class="text-slate-800" />
+                                        <circle cx="64" cy="64" r="58" stroke="currentColor" stroke-width="8"
+                                            fill="transparent" class="text-blue-500" stroke-dasharray="364.4"
+                                            stroke-dashoffset="40" stroke-linecap="round" />
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <span class="text-4xl font-black">8.9</span>
+                                    </div>
+                                </div>
+                                <p class="text-sm font-medium text-slate-400 px-4">{{ t.investmentPotential }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Analysis Details -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+                            <!-- Çevresel Analiz -->
+                            <div class="space-y-4">
+                                <h4 class="font-black text-slate-800 flex items-center gap-2">
+                                    <i class="fa-solid fa-map-location text-emerald-600"></i> {{ t.environmentalAnalysis
+                                    }}
+                                </h4>
+                                <div class="grid grid-cols-1 gap-3">
+                                    <div v-for="item in translatedAmenities" :key="item.label"
+                                        class="bg-white p-4 rounded-2xl border border-slate-200 flex items-center justify-between group hover:border-blue-200 transition">
+                                        <div class="flex items-center gap-4">
+                                            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-lg shadow-sm border border-slate-100 group-hover:scale-110 transition"
+                                                :style="getAmenityStyle(item.shadow)">
+                                                <i :class="`fa-solid ${item.icon}`"></i>
+                                            </div>
+                                            <span class="font-bold text-slate-700 text-sm italic">{{ item.label
+                                                }}</span>
+                                        </div>
+                                        <span class="text-xs font-black text-slate-400">{{ item.dist }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- AI Insights -->
+                            <div class="space-y-4 text-start">
+                                <h4 class="font-black text-slate-800 flex items-center gap-2 italic">
+                                    <i class="fa-solid fa-lightbulb text-amber-500"></i> {{ t.aiInsights }}
+                                </h4>
+                                <div
+                                    class="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm space-y-4 h-full">
+                                    <div class="space-y-4">
+                                        <div class="flex items-start gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                                                <i class="fa-solid fa-map-location text-emerald-600 text-xs"></i>
+                                            </div>
+                                            <p class="text-sm text-slate-600 font-medium italic"><span
+                                                    class="font-black text-slate-900">{{ t.urbanPlanLabel }}</span> {{
+                                                t.urbanPlanDesc }}</p>
+                                        </div>
+                                        <div class="flex items-start gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                                                <i class="fa-solid fa-users-line text-blue-600 text-xs"></i>
+                                            </div>
+                                            <p class="text-sm text-slate-600 font-medium italic"><span
+                                                    class="font-black text-slate-900">{{ t.demographicLabel }}</span> {{
+                                                t.demographicDesc }}</p>
+                                        </div>
+                                        <div class="flex items-start gap-3">
+                                            <div
+                                                class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                                                <i class="fa-solid fa-triangle-exclamation text-amber-600 text-xs"></i>
+                                            </div>
+                                            <p class="text-sm text-slate-600 font-medium italic"><span
+                                                    class="font-black text-slate-900">{{ t.riskAnalysisLabel }}</span>
+                                                {{ t.riskAnalysisDesc }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-8 pt-8 border-t border-slate-100 flex items-center justify-between">
+                                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{{
+                                            t.analysisAccuracy }}</p>
+                                        <p class="text-xs font-black text-blue-600">94% {{ t.accuracy }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- ==================== PARCEL INFO MODAL (GOOGLE EARTH STYLE) ==================== -->
+        <transition name="modal">
+            <div v-if="modals.propInfo && modals.activeProp"
+                class="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+                <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" @click="modals.propInfo = false"></div>
+                <div
+                    class="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl relative animate-modal-up border border-slate-200">
+                    <!-- Close button -->
+                    <button @click="modals.propInfo = false"
+                        class="absolute top-4 right-4 z-20 w-8 h-8 bg-black/10 hover:bg-black/20 rounded-full flex items-center justify-center text-slate-800 transition">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+
+                    <!-- Header -->
+                    <div class="bg-slate-900 p-6 text-white relative">
+                        <div
+                            class="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -mr-16 -mt-16 blur-3xl">
+                        </div>
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div
+                                class="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 text-2xl">
+                                <i class="fa-solid fa-location-dot"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xl font-black">{{ t.lblParcel }} #{{ modals.activeProp.ada }}/{{
+                                    modals.activeProp.parsel }}</h3>
+                                <p class="text-[10px] text-slate-400 font-bold tracking-widest uppercase">{{
+                                    translateData('directorates', modals.activeProp.directorate) }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scrollable Content -->
+                    <div class="p-6 max-h-[70vh] overflow-y-auto space-y-6 bg-slate-50/50">
+                        <!-- Malik Bilgileri -->
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                            <h4
+                                class="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-user-tag"></i> {{ t.infoOwner }}
+                            </h4>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoOwnerTr }}</span>
+                                    <span class="font-bold text-slate-700">{{ modals.activeProp.owner_name ||
+                                        modals.activeProp.owner }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm"
+                                    v-if="modals.activeProp.owner_name_ar">
+                                    <span class="text-slate-400">{{ t.infoOwnerAr }}</span>
+                                    <span class="font-bold text-slate-900 text-right dir-rtl">{{
+                                        modals.activeProp.owner_name_ar }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoHisse }}</span>
+                                    <span class="font-bold text-slate-700">{{ translateData('shares',
+                                        modals.activeProp.share_text) }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Taşınmaz Bilgileri -->
+                        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                            <h4
+                                class="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-house-chimney"></i> {{ t.infoProperty }}
+                            </h4>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoKadastroNo }}</span>
+                                    <span class="font-black text-red-600 font-mono">{{ modals.activeProp.ada }}/{{
+                                        modals.activeProp.parsel }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.quality }}</span>
+                                    <span class="font-bold text-slate-700">{{ translateData('types',
+                                        modals.activeProp.type) }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.areaSize }}</span>
+                                    <span class="font-black text-slate-800">{{ modals.activeProp.area_text ||
+                                        modals.activeProp.area }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoValue }}</span>
+                                    <span class="font-black text-emerald-600">${{ (modals.activeProp.price ||
+                                        0).toLocaleString() }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Konum Bilgileri -->
+                        <div class="bg-violet-50/50 p-4 rounded-2xl border border-violet-100">
+                            <h4
+                                class="text-[10px] font-black text-violet-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-map-pin"></i> {{ t.infoLocation }}
+                            </h4>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-baseline text-sm">
+                                    <span class="text-slate-400">{{ t.infoProvince }}</span>
+                                    <span class="font-bold text-slate-700">{{ modals.activeProp.province }}</span>
+                                </div>
+                                <div class="flex justify-between items-baseline text-sm">
+                                    <span class="text-slate-400">{{ t.infoDistrict }}</span>
+                                    <span class="font-bold text-slate-700">{{ translateData('locations',
+                                        modals.activeProp.location) }}</span>
+                                </div>
+                                <div class="flex justify-between items-baseline text-sm"
+                                    v-if="modals.activeProp.street">
+                                    <span class="text-slate-400">{{ t.infoStreet }}</span>
+                                    <span class="font-bold text-slate-700">{{ modals.activeProp.street }}</span>
+                                </div>
+                                <div class="flex justify-between items-baseline text-sm">
+                                    <span class="text-slate-400">{{ t.infoCoords }}</span>
+                                    <span class="font-mono text-[11px] text-slate-500"
+                                        v-if="modals.activeProp.geometry">
+                                        {{ modals.activeProp.geometry.coordinates[0][0][1].toFixed(6) }}, {{
+                                        modals.activeProp.geometry.coordinates[0][0][0].toFixed(6) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tescil Bilgileri -->
+                        <div class="bg-amber-50/50 p-4 rounded-2xl border border-amber-100">
+                            <h4
+                                class="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                <i class="fa-solid fa-calendar-check"></i> {{ t.infoRegistration }}
+                            </h4>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoRegDate }}</span>
+                                    <span class="font-bold text-slate-700">{{ modals.activeProp.signature_date ||
+                                        modals.activeProp.registration_date }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoRegNo }}</span>
+                                    <span class="font-bold text-slate-700">{{ modals.activeProp.daily_register_no
+                                        }}</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-slate-400">{{ t.infoRegType }}</span>
+                                    <span class="font-bold text-slate-700">{{ translateData('transactions',
+                                        modals.activeProp.transaction_type) }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Warning Footer -->
+                        <div class="bg-amber-100/50 p-4 rounded-xl flex items-start gap-3 border border-amber-200">
+                            <i class="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5"></i>
+                            <p class="text-[10px] text-amber-800 leading-relaxed font-medium">
+                                {{ t.officialSourceNote }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- Toast Notification -->
+        <div v-if="toast.show"
+            class="fixed bottom-6 end-6 bg-slate-900 text-white p-4 rounded-xl shadow-2xl z-[10000] max-w-xs border-s-4 border-emerald-500"
+            :dir="lang === 'ar' ? 'rtl' : 'ltr'">
+            <h4 class="font-bold text-sm">{{ toast.title }}</h4>
+            <p class="text-xs text-slate-400">{{ toast.message }}</p>
+        </div>
+
+    </div>
+
+    <!-- ==================== SCRIPTS ==================== -->
+    <!-- Load in correct order: config first, then utilities, then managers, then app -->
+    <script src="js/config.js"></script>
+    <script src="js/translations.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/ocr.js"></script>
+    <script src="js/kmz.js"></script>
+    <script src="js/app.js"></script>
+
+</body>
+
+</html>

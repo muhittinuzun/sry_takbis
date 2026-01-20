@@ -1,0 +1,185 @@
+{
+    "nodes": [
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "=https://vision.googleapis.com/v1/images:annotate?key=AIzaSyBltZRduPsCwMxqTP1-AwQqBHvS2fHjHt4",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "Content-Type",
+                            "value": "application/json"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={\n  \"requests\": [\n    {\n      \"image\": {\n        \"content\": \"{{ $json.body.data }}\"\n      },\n      \"features\": [\n        {\n          \"type\": \"TEXT_DETECTION\"\n        },\n        {\n          \"type\": \"DOCUMENT_TEXT_DETECTION\",\n          \"maxResults\": 1\n        }\n      ]\n    }\n  ]\n}",
+                "options": {}
+            },
+            "id": "4ba9568b-c197-461e-94c0-1c6de1c1055a",
+            "name": "Gemini OCR1",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                832,
+                256
+            ]
+        },
+        {
+            "parameters": {
+                "modelId": {
+                    "__rl": true,
+                    "value": "models/gemini-2.5-flash",
+                    "mode": "list",
+                    "cachedResultName": "models/gemini-2.5-flash"
+                },
+                "messages": {
+                    "values": [
+                        {
+                            "content": "={{ $json.final_prompt }}"
+                        }
+                    ]
+                },
+                "jsonOutput": true,
+                "options": {
+                    "temperature": 0
+                }
+            },
+            "type": "@n8n/n8n-nodes-langchain.googleGemini",
+            "typeVersion": 1,
+            "position": [
+                1344,
+                208
+            ],
+            "id": "afe25cf0-62b8-4cc9-af78-9b830f85d35d",
+            "name": "Message a model",
+            "credentials": {
+                "googlePalmApi": {
+                    "id": "PaW494fBLuU3Mpnc",
+                    "name": "ITT gemini pro"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "jsCode": "// 1. LLM'den gelen derin yapıdaki metni alıyoruz\n// Senin paylaştığın çıktı yapısına tam uyumlu yol:\nconst llmResponseText = items[0].json.content.parts[0].text;\n\n// 2. Temizlik İşlemi (Güvenlik Önlemi)\n// Bazen LLM yanıtı ```json ... ``` blokları arasına alır, bunları temizleyelim.\nconst cleanJsonString = llmResponseText.replace(/```json/g, \"\").replace(/```/g, \"\").trim();\n\n// 3. Metni (String) gerçek JSON objesine çeviriyoruz\nlet parsedData;\ntry {\n  parsedData = JSON.parse(cleanJsonString);\n} catch (error) {\n  // Eğer JSON bozuksa hata fırlatmaması için boş obje veya hata mesajı dön\n  parsedData = { error: \"JSON parse edilemedi\", raw: cleanJsonString };\n}\n\n// 4. Temizlenmiş veriyi akışa veriyoruz\nreturn {\n  json: parsedData\n};"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1712,
+                176
+            ],
+            "id": "27f1b61e-3185-42dc-92ef-6caa29e05ee7",
+            "name": "Code in JavaScript5"
+        },
+        {
+            "parameters": {
+                "jsCode": "// 1. Google Vision OCR çıktısından ham metni alıyoruz\nconst rawText = items[0].json.responses[0].textAnnotations[0].description;\n\n// 2. Senin belirlediğin HEDEF ŞEMA (LLM buna göre dolduracak)\nconst targetSchema = {\n  \"schema_id\": \"tapu_sy_form_v1\",\n  \"document_type\": \"property_registry_form\",\n  \"pages\": [\n    {\n      \"page_no\": 1,\n      \"page_name\": \"Kayıt Tablosu (Sol Sayfa)\",\n      \"sections\": [\n        {\n          \"section_id\": \"p1_registry_table\",\n          \"title_tr\": \"Kayıt Tablosu\",\n          \"repeatable\": true,\n          \"fields\": [\n            { \"key\": \"row_sequence\", \"label_tr\": \"Sıra No (Tablonun en sağı)\", \"type\": \"integer\" },\n            { \"key\": \"daily_register_no\", \"label_tr\": \"Günlük Kayıt No / Yevmiye\", \"type\": \"string\" },\n            { \"key\": \"transaction_date\", \"label_tr\": \"Tarih\", \"type\": \"date\" },\n            { \"key\": \"owner_name\", \"label_tr\": \"Malik Adı\", \"type\": \"string\" },\n            { \"key\": \"share_text\", \"label_tr\": \"Hisse (Örn: 2400/2400 veya Tamamı)\", \"type\": \"string\" },\n            { \"key\": \"transaction_type\", \"label_tr\": \"İşlem Türü (Satış, İntikal vb.)\", \"type\": \"string\" }\n          ]\n        }\n      ]\n    },\n    {\n      \"page_no\": 2,\n      \"page_name\": \"Taşınmaz Kimliği (Sağ Sayfa)\",\n      \"sections\": [\n        {\n          \"section_id\": \"p2_institution\",\n          \"title_tr\": \"Kurum Bilgileri\",\n          \"fields\": [\n            { \"key\": \"province\", \"label_tr\": \"İl (Muhafaza)\", \"type\": \"string\" },\n            { \"key\": \"directorate\", \"label_tr\": \"Müdürlük (Örn: Rif Şam)\", \"type\": \"string\" },\n            { \"key\": \"office_or_circle\", \"label_tr\": \"Daire / Bölge Ofisi\", \"type\": \"string\" }\n          ]\n        },\n        {\n          \"section_id\": \"p2_property_identity\",\n          \"title_tr\": \"Taşınmaz Kimliği\",\n          \"fields\": [\n            { \"key\": \"district\", \"label_tr\": \"Bölge / Mıntıka (Örn: Mezze)\", \"type\": \"string\" },\n            { \"key\": \"property_number\", \"label_tr\": \"Ada/Parsel No (Daire içindeki sayı)\", \"type\": \"string\" },\n            { \"key\": \"property_type\", \"label_tr\": \"Cins (Örn: Dükkan, Ev)\", \"type\": \"string\" },\n            { \"key\": \"description\", \"label_tr\": \"Detaylı Tanım (Uzun metin)\", \"type\": \"string\" }\n          ]\n        },\n        {\n          \"section_id\": \"p2_details\",\n          \"title_tr\": \"Diğer Detaylar\",\n          \"fields\": [\n             { \"key\": \"area_text\", \"label_tr\": \"Yüzölçümü / Alan\", \"type\": \"string\" },\n             { \"key\": \"signature_date\", \"label_tr\": \"Düzenlenme Tarihi (En altta)\", \"type\": \"date\" }\n          ]\n        }\n      ]\n    }\n  ]\n};\n\n// 3. LLM'e Gönderilecek PROMPT'u Hazırlıyoruz\nconst prompt = `\nSen uzman bir Osmanlı/Suriye Tapu analistisin.\nGörevin: Aşağıdaki OCR metnini analiz etmek ve verilen JSON ŞEMASINA (%100 uyumlu şekilde) doldurmaktır.\n\nKURALLAR:\n1. **Şema Sadakati:** Sadece 'target_schema' yapısını kullan. Başka alan uydurma.\n2. **Bağlam:** Belge iki sayfadan oluşur.\n   - Sağ taraf (Page 2): Gayrimenkulün kimliği (İl, Bölge, Parsel, Cins).\n   - Sol taraf (Page 1): Malikler tablosu (İsimler, Hisseler).\n3. **Hata Düzeltme:** OCR hatalarını düzelt (Örn: \"Salih Mukaraba\" -> \"Masalih Akariye\").\n4. **Boş Alanlar:** Eğer metinde bilgi yoksa o alanı 'null' olarak bırak ama anahtarı silme.\n5. **Hisse:** \"الكامل\" görürsen \"Tamamı (1/1)\" yaz.\n6. **Sadece JSON:** Yanıtın sadece saf JSON olsun, markdown ekleme.\n\nHEDEF ŞEMA:\n${JSON.stringify(targetSchema, null, 2)}\n\nİŞLENECEK OCR METNİ:\n\"${rawText}\"\n`;\n\n// 4. Çıktıyı sonraki node'a iletiyoruz\nreturn {\n  json: {\n    final_prompt: prompt\n  }\n};"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                1120,
+                240
+            ],
+            "id": "cd0ca319-b04c-495f-9983-7ed84924df3f",
+            "name": "Code in JavaScript"
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1.5,
+            "position": [
+                1936,
+                144
+            ],
+            "id": "6a710fb0-9465-466f-8a15-b8bc8583e62c",
+            "name": "Respond to Webhook"
+        },
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "6a41b4a1-abcb-4610-85c8-8b2ac4cb680a",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [
+                576,
+                336
+            ],
+            "id": "01d89a1d-28ec-4a4c-8a89-b3657dac7b8c",
+            "name": "Webhook",
+            "webhookId": "6a41b4a1-abcb-4610-85c8-8b2ac4cb680a"
+        }
+    ],
+    "connections": {
+        "Gemini OCR1": {
+            "main": [
+                [
+                    {
+                        "node": "Code in JavaScript",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Message a model": {
+            "main": [
+                [
+                    {
+                        "node": "Code in JavaScript5",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Code in JavaScript5": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Webhook",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Code in JavaScript": {
+            "main": [
+                [
+                    {
+                        "node": "Message a model",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Gemini OCR1",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "pinData": {},
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "6f076ed0cacd38fc2ba8ffa68ee2e157985f657f98d37b30667e4135afe7d023"
+    }
+}
